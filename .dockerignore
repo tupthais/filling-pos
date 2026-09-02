@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+backups
+.env
+.env.local
+.env.*.local
+*.log
+apps/pos-android/app/build
+apps/pos-android/.gradle
+src/generated
+coverage
+.DS_Store

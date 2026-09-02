@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npx prisma generate && npm run build",
+  "installCommand": "npm ci",
+  "regions": ["sin1"],
+  "env": {
+    "POS_PERSISTENCE_MODE": "memory"
+  }
+}

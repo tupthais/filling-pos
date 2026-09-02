@@ -138,7 +138,26 @@ Do not label the system production-ready until these are complete:
 9. Obtain accountant review for Thai tax configuration and e-Tax/WHT boundaries.
 10. Choose final open-source license and add SECURITY/CONTRIBUTING/release governance files.
 
-## 9. Important operational notes
+## 9. Deploy
+
+**Self-hosted (recommended):**
+```powershell
+# ตั้ง env จริงใน .env.prod.local หรือ export
+$env:POSTGRES_PASSWORD="use-strong-password"
+$env:BOOTSTRAP_SECRET="use-a-long-random-secret"
+$env:PORT="3001"
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec app npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml logs -f app
+# health: http://localhost:3001/api/health  +  /ops
+```
+Image ใช้ `output: standalone` (`next.config.ts:4`) + `Dockerfile` multi-stage + `HEALTHCHECK` ที่ `/api/health`
+
+**Vercel (preview only, memory mode):** import `tupthais/filling-pos` แล้วตั้ง `DATABASE_URL` เป็น Neon/Supabase Postgres ถ้าต้องการ `POS_PERSISTENCE_MODE=database` มิฉะนั้นจะเป็น `memory` ตาม `vercel.json`
+
+**CI:** `.github/workflows/ci.yml` รัน `prisma validate → typecheck → test (41) → build → audit` + docker build บน main
+
+## 10. Important operational notes
 
 - Do not commit `.env.local`, tokens, passwords or backup files.
 - Do not run `npm audit fix --force`; it may downgrade Prisma or upgrade Next.js across a breaking boundary.
