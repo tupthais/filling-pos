@@ -33,6 +33,16 @@ export async function confirmPersistedOrder(id: string) {
   return confirmed;
 }
 
+export async function voidPersistedOrder(id: string, reason: string, actorUserId?: string) {
+  const existing = await prisma.posOrder.findUnique({ where: { id } });
+  if (!existing) throw new Error("Order not found.");
+  if (existing.status === "COMPLETED") throw new Error("Cannot void completed order — use refund.");
+  if (existing.status === "CANCELLED") return existing;
+  const order = await prisma.posOrder.update({ where: { id }, data: { status: "CANCELLED" } });
+  await recordPosAudit({ branchId: order.branchId, actorUserId, action: "order.voided", entityType: "PosOrder", entityId: order.id, metadata: { reason } });
+  return order;
+}
+
 export async function settlePersistedOrder(input: { orderId: string; allocations: PaymentAllocation[]; tenderedSatang: number; idempotencyKey: string }) {
   const existing = await prisma.posPayment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
   if (existing) return existing;

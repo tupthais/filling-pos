@@ -80,6 +80,7 @@ function issueReceipt(order: PosOrder) {
 export function getReceipt(id: string) { return receipts.get(id); }
 export function openShift(input: { branchId: string; cashierId: string; openingFloatSatang: number }) { const shift: PosShift = { id: `shift_${crypto.randomUUID()}`, ...input, openedAt: new Date().toISOString(), status: "OPEN", cashSalesSatang: 0, cashOutSatang: 0, refundsSatang: 0 }; shifts.set(shift.id, shift); return shift; }
 export function closeShift(id: string, countedCashSatang: number) { const shift = shifts.get(id); if (!shift) return undefined; if (shift.status === "CLOSED") return shift; const expected = shift.openingFloatSatang + shift.cashSalesSatang - shift.cashOutSatang - shift.refundsSatang; shift.status = "CLOSED"; shift.countedCashSatang = countedCashSatang; shift.varianceSatang = countedCashSatang - expected; shift.closedAt = new Date().toISOString(); return shift; }
+export function voidOrder(id: string, reason: string) { const order = orders.get(id); if (!order) return undefined; if (order.status === "COMPLETED") throw new Error("Cannot void completed order — use refund."); if (order.status === "CANCELLED") return order; order.status = "CANCELLED"; (order as unknown as Record<string, unknown>).voidReason = reason; return order; }
 export function listShifts() { return [...shifts.values()].sort((a, b) => b.openedAt.localeCompare(a.openedAt)); }
 
 export function getStockLedger() { return [...stockLedger]; }
