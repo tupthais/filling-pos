@@ -43,6 +43,24 @@ export async function voidPersistedOrder(id: string, reason: string, actorUserId
   return order;
 }
 
+export async function refundPersistedOrder(input: { orderId: string; amountSatang: number; reason: string; idempotencyKey: string; actorUserId?: string }) {
+  const existing = await prisma.posPayment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+  if (existing) return existing;
+  const refund = await prisma.$transaction(async (tx) => {
+    const order = await tx.posOrder.findUnique({ where: { id: input.orderId }, include: { payments: true } });
+    if (!order) throw new Error("Order not found.");
+    if (order.status !== "COMPLETED") throw new Error("Only completed orders can be refunded.");
+    const paid = order.payments.reduce((s, p) => s + p.amountSatang, 0);
+    if (input.amountSatang > paid) throw new Error("Refund exceeds paid amount.");
+    const payment = await tx.posPayment.create({ data: { orderId: order.id, method: "refund", amountSatang: -Math.abs(input.amountSatang), tenderedSatang: 0, changeSatang: 0, allocations: { reason: input.reason } as unknown as Prisma.InputJsonValue, idempotencyKey: input.idempotencyKey } });
+    await tx.posOrder.update({ where: { id: order.id }, data: { status: input.amountSatang >= paid ? "REFUNDED" : "PARTIALLY_REFUNDED" } });
+    return payment;
+  });
+  const order = await prisma.posOrder.findUnique({ where: { id: input.orderId }, select: { branchId: true } });
+  if (order) await recordPosAudit({ branchId: order.branchId, actorUserId: input.actorUserId, action: "payment.refunded", entityType: "PosOrder", entityId: input.orderId, metadata: { amountSatang: input.amountSatang, reason: input.reason } });
+  return refund;
+}
+
 export async function settlePersistedOrder(input: { orderId: string; allocations: PaymentAllocation[]; tenderedSatang: number; idempotencyKey: string }) {
   const existing = await prisma.posPayment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
   if (existing) return existing;
