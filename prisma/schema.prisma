@@ -1,0 +1,715 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AgentRunStatus {
+  queued
+  running
+  waiting_approval
+  completed
+  failed
+  cancelled
+}
+
+enum ApprovalStatus {
+  draft
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum ComplianceStatus {
+  pass
+  warning
+  fail
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  submit
+  approve
+  reject
+  compliance_check
+  agent_run
+}
+
+model Tenant {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  users         User[]
+  memberships   Membership[]
+  roles         Role[]
+  workspaces    ClientWorkspace[]
+  auditEvents   AuditEvent[]
+  agentDefs     AgentDefinition[]
+  posBranches    PosBranch[]
+}
+
+model User {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @db.Uuid @map("tenant_id")
+  email         String
+  name          String
+  passwordHash   String?        @map("password_hash")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships   Membership[]
+  auditEvents   AuditEvent[]
+  posAccesses   PosAccess[]
+  posSessions   PosSession[]
+  posAuditEvents PosAuditEvent[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Role {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @db.Uuid @map("tenant_id")
+  name          String
+  description   String?
+  createdAt     DateTime       @default(now())
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships   Membership[]
+  permissions   RolePermission[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Permission {
+  id            String         @id @default(uuid()) @db.Uuid
+  key           String         @unique
+  description   String?
+  roles         RolePermission[]
+}
+
+model RolePermission {
+  roleId        String         @db.Uuid
+  permissionId  String         @db.Uuid
+  role          Role           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Membership {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @db.Uuid @map("tenant_id")
+  userId        String         @db.Uuid
+  roleId        String         @db.Uuid
+  workspaceId   String?        @db.Uuid @map("workspace_id")
+  createdAt     DateTime       @default(now())
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          Role           @relation(fields: [roleId], references: [id])
+  workspace     ClientWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, workspaceId])
+}
+
+model ClientWorkspace {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid @map("tenant_id")
+  name            String
+  slug            String
+  status          String            @default("active")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships     Membership[]
+  companyProfile  CompanyProfile?
+  brandBrain      BrandBrain?
+  brandIdentity   BrandIdentity?
+  toneOfVoices    ToneOfVoice[]
+  brandRules      BrandRule[]
+  assets          Asset[]
+  promptTemplates PromptTemplate[]
+  personas        Persona[]
+  products        ProductService[]
+  campaigns       Campaign[]
+  approvals       ApprovalRequest[]
+  compliance      ComplianceCheck[]
+  agentRuns       AgentRun[]
+  memories        MemoryRecord[]
+  auditEvents     AuditEvent[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model CompanyProfile {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @unique @db.Uuid @map("workspace_id")
+  companyName   String
+  businessType  String
+  brandStory    String?
+  mission       String?
+  vision        String?
+  coreValues    String[]
+  contactJson   Json?
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model BrandBrain {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @unique @db.Uuid @map("workspace_id")
+  summary       String
+  evidenceJson  Json?
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model BrandIdentity {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @db.Uuid @map("tenant_id")
+  workspaceId       String          @unique @db.Uuid @map("workspace_id")
+  logoAssetId       String?         @db.Uuid
+  colorSystemJson   Json
+  typographyJson    Json
+  photographyJson   Json?
+  designRulesJson   Json?
+  version           Int             @default(1)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model ToneOfVoice {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  name          String
+  description   String
+  examples      String[]
+  bannedPhrases String[]
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId])
+}
+
+model BrandRule {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  type          String
+  severity      ComplianceStatus @default(fail)
+  rule          String
+  evidenceHint  String?
+  isActive      Boolean         @default(true)
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId])
+}
+
+model Asset {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  kind          String
+  name          String
+  provider      String
+  objectKey     String
+  mimeType      String
+  metadataJson  Json?
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId])
+}
+
+model PromptTemplate {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  name          String
+  channel       String
+  template      String
+  variables     String[]
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, workspaceId, name, version])
+  @@index([tenantId, workspaceId])
+}
+
+model Persona {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  name          String
+  profileJson   Json
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId])
+}
+
+model ProductService {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  name          String
+  sku           String?
+  priceCents    Int?
+  metadataJson  Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId])
+}
+
+model Campaign {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  name          String
+  goal          String
+  status        String          @default("draft")
+  budgetCents   Int?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentItems  ContentItem[]
+
+  @@index([tenantId, workspaceId])
+}
+
+model ContentItem {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  campaignId    String?         @db.Uuid
+  channel       String
+  title         String
+  body          String
+  status        String          @default("draft")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  campaign      Campaign?       @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, workspaceId])
+}
+
+model ApprovalRequest {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  subjectType   String
+  subjectId     String
+  status        ApprovalStatus  @default(pending)
+  requestedById String?         @db.Uuid
+  reason        String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId, status])
+}
+
+model ComplianceCheck {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  subjectType   String
+  subjectId     String?
+  status        ComplianceStatus
+  reasons       String[]
+  evidenceJson  Json
+  createdAt     DateTime        @default(now())
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId, status])
+}
+
+model AgentDefinition {
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @db.Uuid @map("tenant_id")
+  key             String
+  name            String
+  externalActions Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions        AgentVersion[]
+  runs            AgentRun[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model AgentVersion {
+  id            String          @id @default(uuid()) @db.Uuid
+  agentId       String          @db.Uuid
+  version       Int
+  configJson    Json
+  createdAt     DateTime        @default(now())
+  agent         AgentDefinition @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+}
+
+model AgentRun {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  agentId       String          @db.Uuid
+  status        AgentRunStatus  @default(queued)
+  requestJson   Json
+  resultJson    Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent         AgentDefinition @relation(fields: [agentId], references: [id])
+  steps         RunStep[]
+
+  @@index([tenantId, workspaceId, status])
+}
+
+model RunStep {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid @map("tenant_id")
+  workspaceId     String        @db.Uuid @map("workspace_id")
+  runId           String        @db.Uuid
+  name            String
+  status          AgentRunStatus @default(queued)
+  inputArtifacts  Json?
+  outputArtifacts Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  run             AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId, runId])
+}
+
+model MemoryRecord {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String          @db.Uuid @map("workspace_id")
+  namespace     String
+  content       String
+  metadataJson  Json?
+  createdAt     DateTime        @default(now())
+  workspace     ClientWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, workspaceId, namespace])
+}
+
+model AuditEvent {
+  id            String          @id @default(uuid()) @db.Uuid
+  tenantId      String          @db.Uuid @map("tenant_id")
+  workspaceId   String?         @db.Uuid @map("workspace_id")
+  actorUserId   String?         @db.Uuid
+  action        AuditAction
+  entityType    String
+  entityId      String
+  beforeJson    Json?
+  afterJson     Json?
+  createdAt     DateTime        @default(now())
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workspace     ClientWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor         User?           @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, workspaceId, createdAt])
+}
+
+model PosBranch {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @db.Uuid @map("tenant_id")
+  name        String
+  code        String
+  timezone    String          @default("Asia/Bangkok")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  devices     PosDevice[]
+  tables      PosTable[]
+  products    PosProduct[]
+  orders      PosOrder[]
+  shifts      PosShift[]
+  receipts    PosReceipt[]
+  documentSequences PosDocumentSequence[]
+  stockLedger PosStockLedger[]
+  accesses    PosAccess[]
+  sessions    PosSession[]
+  auditEvents PosAuditEvent[]
+  jobs        PosJob[]
+  incidents   PosIncident[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model PosDevice {
+  id          String    @id @default(uuid()) @db.Uuid
+  branchId    String    @db.Uuid @map("branch_id")
+  deviceCode  String    @map("device_code")
+  name        String
+  kind        String
+  status      String    @default("ACTIVE")
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+  branch      PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  sessions    PosSession[]
+
+  @@unique([branchId, deviceCode])
+  @@index([branchId, status])
+}
+
+model PosTable {
+  id        String    @id @default(uuid()) @db.Uuid
+  branchId  String    @db.Uuid @map("branch_id")
+  name      String
+  qrToken   String    @unique @map("qr_token")
+  status    String    @default("AVAILABLE")
+  branch    PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orders    PosOrder[]
+
+  @@unique([branchId, name])
+  @@index([branchId, status])
+}
+
+model PosProduct {
+  id          String    @id @default(uuid()) @db.Uuid
+  branchId    String    @db.Uuid @map("branch_id")
+  sku         String
+  name        String
+  categoryId  String?   @map("category_id")
+  priceSatang Int       @map("price_satang")
+  channels    Json
+  schedule    Json?
+  bom         Json?
+  available   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  branch      PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  orderItems  PosOrderItem[]
+
+  @@unique([branchId, sku])
+  @@index([branchId, available])
+}
+
+model PosOrder {
+  id             String         @id @default(uuid()) @db.Uuid
+  branchId       String         @db.Uuid @map("branch_id")
+  tableId        String?        @db.Uuid @map("table_id")
+  source         String
+  status         String         @default("DRAFT")
+  subtotalSatang Int            @map("subtotal_satang")
+  discountSatang Int            @default(0) @map("discount_satang")
+  taxSatang      Int            @default(0) @map("tax_satang")
+  totalSatang    Int            @map("total_satang")
+  idempotencyKey String         @unique @map("idempotency_key")
+  createdAt      DateTime       @default(now())
+  confirmedAt    DateTime?
+  paidAt         DateTime?
+  branch         PosBranch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table          PosTable?      @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items          PosOrderItem[]
+  payments       PosPayment[]
+  receipt        PosReceipt?
+
+  @@index([branchId, status, createdAt])
+}
+
+model PosOrderItem {
+  id              String      @id @default(uuid()) @db.Uuid
+  orderId         String      @db.Uuid @map("order_id")
+  productId       String      @db.Uuid @map("product_id")
+  quantity        Decimal     @db.Decimal(12, 3)
+  unitPriceSatang Int         @map("unit_price_satang")
+  snapshot        Json
+  order           PosOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         PosProduct  @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model PosPayment {
+  id              String   @id @default(uuid()) @db.Uuid
+  orderId         String   @db.Uuid @map("order_id")
+  method          String
+  amountSatang    Int      @map("amount_satang")
+  tenderedSatang  Int      @default(0) @map("tendered_satang")
+  changeSatang    Int      @default(0) @map("change_satang")
+  allocations     Json?
+  idempotencyKey  String   @unique @map("idempotency_key")
+  createdAt       DateTime @default(now())
+  order           PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model PosShift {
+  id                  String    @id @default(uuid()) @db.Uuid
+  branchId            String    @db.Uuid @map("branch_id")
+  cashierId           String    @db.Uuid @map("cashier_id")
+  openingFloatSatang  Int       @map("opening_float_satang")
+  status              String    @default("OPEN")
+  countedCashSatang   Int?      @map("counted_cash_satang")
+  varianceSatang      Int?      @map("variance_satang")
+  openedAt            DateTime  @default(now())
+  closedAt            DateTime?
+  branch              PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, status, openedAt])
+}
+
+model PosReceipt {
+  id              String    @id @default(uuid()) @db.Uuid
+  branchId        String    @db.Uuid @map("branch_id")
+  orderId         String    @unique @db.Uuid @map("order_id")
+  documentType    String    @map("document_type")
+  documentNumber  String    @map("document_number")
+  totalSatang     Int       @map("total_satang")
+  status          String    @default("ISSUED")
+  issuedAt        DateTime  @default(now())
+  voidedAt        DateTime?
+  branch          PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  order           PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, documentType, documentNumber])
+  @@index([branchId, issuedAt])
+}
+
+model PosDocumentSequence {
+  id            String    @id @default(uuid()) @db.Uuid
+  branchId      String    @db.Uuid @map("branch_id")
+  documentType  String    @map("document_type")
+  year          Int
+  nextNumber    Int       @default(0) @map("next_number")
+  branch        PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, documentType, year])
+}
+
+model PosStockLedger {
+  id            String    @id @default(uuid()) @db.Uuid
+  branchId      String    @db.Uuid @map("branch_id")
+  ingredientId  String    @db.Uuid @map("ingredient_id")
+  quantity      Decimal   @db.Decimal(12, 3)
+  unit          String
+  reason        String
+  reference     String    
+  lotId         String?   @map("lot_id")
+  expiryDate    DateTime? @map("expiry_date")
+  location      String?
+  fromLocation  String?   @map("from_location")
+  toLocation    String?   @map("to_location")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt     DateTime  @default(now())
+  branch        PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, ingredientId, createdAt])
+}
+
+model PosAccess {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid @map("user_id")
+  branchId   String    @db.Uuid @map("branch_id")
+  role       String
+  deviceId   String?   @db.Uuid @map("device_id")
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch     PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId, role])
+  @@index([branchId, role])
+}
+
+model PosSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid @map("user_id")
+  branchId    String    @db.Uuid @map("branch_id")
+  deviceId    String?   @db.Uuid @map("device_id")
+  tokenHash   String    @unique @map("token_hash")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime? @map("revoked_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch      PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  device      PosDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, expiresAt])
+  @@index([branchId, expiresAt])
+}
+
+model PosAuditEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  branchId    String    @db.Uuid @map("branch_id")
+  actorUserId String?   @db.Uuid @map("actor_user_id")
+  action      String
+  entityType  String    @map("entity_type")
+  entityId    String    @map("entity_id")
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  branch      PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  actor       User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, createdAt])
+  @@index([entityType, entityId])
+}
+
+model PosJob {
+  id              String    @id @default(uuid()) @db.Uuid
+  branchId        String    @db.Uuid @map("branch_id")
+  type            String
+  status          String    @default("QUEUED")
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5) @map("max_attempts")
+  lastError       String?   @map("last_error")
+  nextAttemptAt   DateTime? @map("next_attempt_at")
+  idempotencyKey  String    @unique @map("idempotency_key")
+  payload         Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  branch          PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, status, nextAttemptAt])
+}
+
+model PosIncident {
+  id          String    @id @default(uuid()) @db.Uuid
+  branchId    String    @db.Uuid @map("branch_id")
+  severity    String    @default("MEDIUM")
+  status      String    @default("OPEN")
+  title       String
+  description String
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime? @map("resolved_at")
+  branch      PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, status, createdAt])
+}

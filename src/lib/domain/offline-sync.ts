@@ -1,0 +1,6 @@
+export type SyncRecord = { localOrderId: string; deviceId: string; payload: unknown; status: "PENDING" | "ACKED" | "CONFLICT"; createdAt: string; serverOrderId?: string; conflictReason?: string };
+const records = new Map<string, SyncRecord>();
+
+export function enqueueOfflineOrder(input: { localOrderId: string; deviceId: string; payload: unknown }) { const existing = records.get(input.localOrderId); if (existing) return existing; const record: SyncRecord = { ...input, status: "PENDING", createdAt: new Date().toISOString() }; records.set(record.localOrderId, record); return record; }
+export function acknowledgeSync(localOrderId: string, result: { serverOrderId?: string; conflict?: string }) { const record = records.get(localOrderId); if (!record) throw new Error("Offline order not found"); if (record.status === "ACKED" || record.status === "CONFLICT") return record; if (result.conflict) { record.status = "CONFLICT"; record.conflictReason = result.conflict; return record; } if (!result.serverOrderId) throw new Error("Sync acknowledgement requires server order id"); record.status = "ACKED"; record.serverOrderId = result.serverOrderId; return record; }
+export function getSyncRecord(localOrderId: string) { return records.get(localOrderId); }

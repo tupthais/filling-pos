@@ -1,0 +1,13 @@
+import { loyaltyPoints, type Satang } from "./pos";
+
+export type LoyaltyTransaction = { id: string; customerId: string; orderId: string; points: number; kind: "EARN" | "REVERSE"; idempotencyKey: string; createdAt: string };
+const loyaltyTransactions = new Map<string, LoyaltyTransaction>();
+const loyaltyByKey = new Map<string, string>();
+
+export function earnLoyalty(input: { customerId: string; orderId: string; eligibleAmountSatang: Satang; idempotencyKey: string }) { return writeLoyalty({ ...input, points: loyaltyPoints(input.eligibleAmountSatang), kind: "EARN" }); }
+export function reverseLoyalty(input: { customerId: string; orderId: string; points: number; idempotencyKey: string }) { return writeLoyalty({ ...input, kind: "REVERSE" }); }
+function writeLoyalty(input: { customerId: string; orderId: string; points: number; kind: LoyaltyTransaction["kind"]; idempotencyKey: string }) { const existing = loyaltyByKey.get(input.idempotencyKey); if (existing) return loyaltyTransactions.get(existing)!; const transaction: LoyaltyTransaction = { id: `loyalty_${crypto.randomUUID()}`, ...input, createdAt: new Date().toISOString() }; loyaltyTransactions.set(transaction.id, transaction); loyaltyByKey.set(input.idempotencyKey, transaction.id); return transaction; }
+
+export type SupplierPolicy = { supplierId: string; branchId: string; effectiveFrom: string; minimumOrderSatang: Satang; minimumQuantityByIngredient: Record<string, number>; packSizeByIngredient: Record<string, number>; deliveryFeeSatang: Satang };
+export function resolveSupplierPolicy(policies: SupplierPolicy[], supplierId: string, branchId: string, at = new Date().toISOString()) { return policies.filter((policy) => policy.supplierId === supplierId && policy.branchId === branchId && policy.effectiveFrom <= at).sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0]; }
+export function validatePurchaseDraft(policy: SupplierPolicy, items: Array<{ ingredientId: string; quantity: number; unitPriceSatang: Satang }>) { const errors: string[] = []; for (const item of items) { const minimum = policy.minimumQuantityByIngredient[item.ingredientId] ?? 0; if (item.quantity < minimum) errors.push(`${item.ingredientId}: minimum quantity is ${minimum}`); const pack = policy.packSizeByIngredient[item.ingredientId] ?? 1; if (item.quantity % pack !== 0) errors.push(`${item.ingredientId}: quantity must use pack size ${pack}`); } const subtotalSatang = items.reduce((sum, item) => sum + item.quantity * item.unitPriceSatang, 0); if (subtotalSatang < policy.minimumOrderSatang) errors.push(`minimum order value is ${policy.minimumOrderSatang} satang`); return { valid: errors.length === 0, errors, subtotalSatang, totalSatang: subtotalSatang + policy.deliveryFeeSatang }; }
