@@ -8,12 +8,18 @@ export type Promotion =
   | { kind: "bogo"; buy: number; get: number }
   | { kind: "category"; categoryId: string; percent: number };
 
+export type OrderLineModifier = { name: string; priceSatang: Satang };
+
 export type OrderLine = {
   productId: string;
   categoryId?: string;
+  /** Unit price including selected modifiers. */
   unitPriceSatang: Satang;
   quantity: number;
   promotion?: Promotion;
+  name?: string;
+  modifiers?: OrderLineModifier[];
+  note?: string;
 };
 
 export type MoneyBreakdown = {
@@ -24,9 +30,10 @@ export type MoneyBreakdown = {
   totalSatang: Satang;
 };
 
-export function calculateOrder(lines: OrderLine[], tax: TaxProfile): MoneyBreakdown {
+export function calculateOrder(lines: OrderLine[], tax: TaxProfile, orderDiscountSatang: Satang = 0): MoneyBreakdown {
   const subtotalSatang = lines.reduce((sum, line) => sum + line.unitPriceSatang * line.quantity, 0);
-  const discountSatang = lines.reduce((sum, line) => sum + lineDiscount(line), 0);
+  const lineDiscounts = lines.reduce((sum, line) => sum + lineDiscount(line), 0);
+  const discountSatang = Math.min(subtotalSatang, lineDiscounts + Math.max(0, orderDiscountSatang));
   const taxableSatang = Math.max(0, subtotalSatang - discountSatang);
   const vatSatang = tax.inclusive
     ? Math.round(taxableSatang - taxableSatang / (1 + tax.ratePercent / 100))
@@ -45,7 +52,7 @@ function lineDiscount(line: OrderLine): Satang {
   }
 }
 
-export type PaymentAllocation = { method: "cash" | "qr" | "transfer" | "scheme"; amountSatang: Satang };
+export type PaymentAllocation = { method: "cash" | "qr" | "transfer" | "scheme"; amountSatang: Satang; platform?: "grab" | "shopeefood" | "lineman" };
 
 export function validatePayments(totalSatang: Satang, payments: PaymentAllocation[]): void {
   if (payments.reduce((sum, payment) => sum + payment.amountSatang, 0) !== totalSatang) throw new Error("Payment allocation must equal order total.");

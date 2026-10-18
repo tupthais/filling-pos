@@ -152,10 +152,11 @@ docker compose -f docker-compose.prod.yml logs -f app
 # health: http://localhost:3001/api/health  +  /ops
 ```
 Image ใช้ `output: standalone` (`next.config.ts:4`) + `Dockerfile` multi-stage + `HEALTHCHECK` ที่ `/api/health`
+สำหรับการรัน standalone นอก Docker ให้ใช้ `npm run start:standalone` หลัง `npm run build` แทน `next start`
 
 **Vercel (preview only, memory mode):** import `tupthais/filling-pos` แล้วตั้ง `DATABASE_URL` เป็น Neon/Supabase Postgres ถ้าต้องการ `POS_PERSISTENCE_MODE=database` มิฉะนั้นจะเป็น `memory` ตาม `vercel.json`
 
-**CI:** `.github/workflows/ci.yml` รัน `prisma validate → typecheck → test (41) → build → audit` + docker build บน main
+**CI:** `.github/workflows/ci.yml` รัน `prisma validate → typecheck → test → build → audit` + docker build บน main
 
 ## 10. Important operational notes
 
@@ -163,3 +164,26 @@ Image ใช้ `output: standalone` (`next.config.ts:4`) + `Dockerfile` multi-s
 - Do not run `npm audit fix --force`; it may downgrade Prisma or upgrade Next.js across a breaking boundary.
 - Do not use the old OneDrive copy as the active workspace. The canonical project is `D:\AI marketing`.
 - The old C: copy may remain locked by OneDrive and should be removed only after closing OneDrive/IDE processes and confirming the D: workspace is backed up.
+
+## 11. Vercel deployment record
+
+- Provider: Vercel
+- Account/team used for the deployment CLI: `peenawat6-prog` / `peenawat6-progs-projects`
+- Project: `filling-pos`
+- Production URL: `https://filling-pos.vercel.app`
+- Current plan: Hobby
+- Latest deployment: completed with production build passing
+- Deployment protection: enabled; Vercel authentication is required
+- Database status: deployment still needs a reachable managed PostgreSQL instance and production environment variables before real finance, inventory, shift, or payment use
+- Secret handling: do not record Vercel tokens, API keys, passwords, or device codes in this handoff. Keep them in Vercel environment variables or Secret Box/password manager.
+
+## 12. Cloud account and database record
+
+- Vercel browser account used for the current shop workspace: `filling.cnx@gmail.com`
+- Vercel CLI account/team used by the existing deployment: `peenawat6-prog` / `peenawat6-progs-projects`
+- Vercel project: `filling-pos`
+- Supabase account/project: `filling.cnx@gmail.com` / `fillingcnx-maker's Project`
+- Supabase project reference: `ieaizslyunpodungqqrp`
+- Supabase region: `ap-northeast-1`
+- Supabase status: schema, RLS baseline, owner account, 90 menu products and 7 tables seeded
+- Current connection gap: Vercel still needs `DATABASE_URL` for the Supabase Prisma pooler connection; never store the password or full connection string in this document.

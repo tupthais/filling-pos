@@ -54,3 +54,5 @@ apps/pos-android/.gradle/
 
 # logs
 *.log
+
+.vercel

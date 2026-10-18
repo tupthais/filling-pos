@@ -1,9 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { closeShift } from "@/lib/domain/pos-store";
-import { requirePosSession } from "@/lib/auth/guard";
-import { authErrorResponse } from "@/lib/auth/response";
 import { prisma } from "@/lib/db";
 import { recordPosAudit } from "@/lib/domain/pos-audit";
+import { persistedCashBetween } from "@/lib/domain/pos-persistence";
+import { ROLES, withPos } from "@/lib/server/pos-context";
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { if (process.env.POS_PERSISTENCE_MODE === "database") { try { const session = await requirePosSession(request, ["Owner", "Manager", "Cashier"]); const body = z.object({ countedCashSatang: z.number().int().nonnegative() }).safeParse(await request.json()); if (!body.success) return NextResponse.json({ error: "Validation failed", issues: body.error.issues }, { status: 400 }); const id = (await params).id; const existing = await prisma.posShift.findUnique({ where: { id } }); if (!existing) return NextResponse.json({ error: "Shift not found" }, { status: 404 }); if (existing.status === "CLOSED") return NextResponse.json({ data: existing }); const cashSales = await prisma.posPayment.aggregate({ where: { order: { branchId: existing.branchId }, createdAt: { gte: existing.openedAt } }, _sum: { amountSatang: true } }); const cashSalesSatang = cashSales._sum.amountSatang ?? 0; const expected = existing.openingFloatSatang + cashSalesSatang; const varianceSatang = body.data.countedCashSatang - expected; const shift = await prisma.posShift.update({ where: { id }, data: { status: "CLOSED", countedCashSatang: body.data.countedCashSatang, varianceSatang, closedAt: new Date() } }); await recordPosAudit({ branchId: existing.branchId, actorUserId: session.user.id, action: "shift.closed", entityType: "PosShift", entityId: shift.id, metadata: { countedCashSatang: body.data.countedCashSatang, varianceSatang } }); return NextResponse.json({ data: shift }); } catch (error) { return authErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : "Shift close failed" }, { status: 422 }); } } const body = z.object({ countedCashSatang: z.number().int().nonnegative() }).safeParse(await request.json()); if (!body.success) return NextResponse.json({ error: "Validation failed", issues: body.error.issues }, { status: 400 }); const shift = closeShift((await params).id, body.data.countedCashSatang); return shift ? NextResponse.json({ data: shift }) : NextResponse.json({ error: "Shift not found" }, { status: 404 }); }
+const bodySchema = z.object({ countedCashSatang: z.number().int().nonnegative().max(100_000_000) });
+
+/** POST /api/shifts/:id/close — record counted cash and calculate variance. */
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return withPos(request, ROLES.sell, async (context) => {
+    const { id } = await params;
+    const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
+
+    if (context.mode !== "database") {
+      const shift = closeShift(id, parsed.data.countedCashSatang);
+      return shift ? NextResponse.json({ data: shift }) : NextResponse.json({ error: "Shift not found" }, { status: 404 });
+    }
+
+    const existing = await prisma.posShift.findUnique({ where: { id } });
+    if (!existing || existing.branchId !== context.branchId) return NextResponse.json({ error: "Shift not found" }, { status: 404 });
+    if (existing.status === "CLOSED") return NextResponse.json({ data: existing });
+
+    const cashSalesSatang = await persistedCashBetween(existing.branchId, existing.openedAt);
+    const expected = existing.openingFloatSatang + cashSalesSatang;
+    const varianceSatang = parsed.data.countedCashSatang - expected;
+
+    const shift = await prisma.posShift.update({
+      where: { id },
+      data: { status: "CLOSED", countedCashSatang: parsed.data.countedCashSatang, varianceSatang, closedAt: new Date() },
+    });
+
+    await recordPosAudit({
+      branchId: existing.branchId,
+      actorUserId: context.userId,
+      action: "shift.closed",
+      entityType: "PosShift",
+      entityId: shift.id,
+      metadata: { countedCashSatang: parsed.data.countedCashSatang, varianceSatang, expectedCashSatang: expected },
+    });
+
+    return NextResponse.json({
+      data: {
+        ...shift,
+        cashSalesSatang,
+        expectedCashSatang: expected,
+        openedAt: shift.openedAt.toISOString(),
+        closedAt: shift.closedAt?.toISOString(),
+      },
+    });
+  });
+}

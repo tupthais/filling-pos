@@ -1,11 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listShifts, openShift } from "@/lib/domain/pos-store";
-import { requirePosSession } from "@/lib/auth/guard";
-import { authErrorResponse } from "@/lib/auth/response";
 import { prisma } from "@/lib/db";
 import { recordPosAudit } from "@/lib/domain/pos-audit";
+import { persistedCashBetween } from "@/lib/domain/pos-persistence";
+import type { ShiftView } from "@/lib/domain/order-view";
+import { ROLES, withPos } from "@/lib/server/pos-context";
 
-const schema = z.object({ branchId: z.string().min(1), cashierId: z.string().min(1), openingFloatSatang: z.number().int().nonnegative() });
-export async function GET(request: NextRequest) { if (process.env.POS_PERSISTENCE_MODE === "database") { try { await requirePosSession(request); const shifts = await prisma.posShift.findMany({ orderBy: { openedAt: "desc" }, take: 100 }); return NextResponse.json({ data: shifts }); } catch (error) { return authErrorResponse(error) ?? NextResponse.json({ error: "Shift lookup failed" }, { status: 500 }); } } return NextResponse.json({ data: listShifts() }); }
-export async function POST(request: NextRequest) { if (process.env.POS_PERSISTENCE_MODE === "database") { try { const session = await requirePosSession(request, ["Owner", "Manager", "Cashier"]); const parsed = schema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 }); if (!parsed.data.branchId.match(/^[0-9a-f-]{36}$/i)) return NextResponse.json({ error: "branchId must be UUID" }, { status: 400 }); const shift = await prisma.posShift.create({ data: { branchId: parsed.data.branchId, cashierId: parsed.data.cashierId.match(/^[0-9a-f-]{36}$/i) ? parsed.data.cashierId : session.user.id, openingFloatSatang: parsed.data.openingFloatSatang, status: "OPEN" } }); await recordPosAudit({ branchId: parsed.data.branchId, actorUserId: session.user.id, action: "shift.opened", entityType: "PosShift", entityId: shift.id, metadata: { openingFloatSatang: parsed.data.openingFloatSatang } }); return NextResponse.json({ data: shift }, { status: 201 }); } catch (error) { return authErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : "Shift creation failed" }, { status: 422 }); } } const parsed = schema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 }); return NextResponse.json({ data: openShift(parsed.data) }, { status: 201 }); }
+const schema = z.object({ openingFloatSatang: z.number().int().nonnegative().max(100_000_000) });
+
+/** GET /api/shifts — recent shifts; the open shift (if any) includes live expected cash. */
+export async function GET(request: NextRequest) {
+  return withPos(request, ROLES.view, async (context) => {
+    if (context.mode !== "database") {
+      const data: ShiftView[] = listShifts().map((shift) => ({ id: shift.id, status: shift.status, cashierId: shift.cashierId, openingFloatSatang: shift.openingFloatSatang, cashSalesSatang: shift.cashSalesSatang, expectedCashSatang: shift.expectedCashSatang ?? shift.openingFloatSatang + shift.cashSalesSatang - shift.cashOutSatang - shift.refundsSatang, countedCashSatang: shift.countedCashSatang, varianceSatang: shift.varianceSatang, openedAt: shift.openedAt, closedAt: shift.closedAt }));
+      return NextResponse.json({ data });
+    }
+    const shifts = await prisma.posShift.findMany({ where: { branchId: context.branchId }, orderBy: { openedAt: "desc" }, take: 30 });
+    const data: ShiftView[] = await Promise.all(shifts.map(async (shift) => {
+      const cashSalesSatang = await persistedCashBetween(context.branchId, shift.openedAt, shift.closedAt ?? undefined);
+      return { id: shift.id, status: shift.status, cashierId: shift.cashierId, openingFloatSatang: shift.openingFloatSatang, cashSalesSatang, expectedCashSatang: shift.openingFloatSatang + cashSalesSatang, countedCashSatang: shift.countedCashSatang ?? undefined, varianceSatang: shift.varianceSatang ?? undefined, openedAt: shift.openedAt.toISOString(), closedAt: shift.closedAt?.toISOString() };
+    }));
+    return NextResponse.json({ data });
+  });
+}
+
+/** POST /api/shifts — open a shift with an opening float. Only one open shift per branch. */
+export async function POST(request: NextRequest) {
+  return withPos(request, ROLES.sell, async (context) => {
+    const parsed = schema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
+    if (context.mode !== "database") return NextResponse.json({ data: openShift({ branchId: context.branchId, cashierId: "demo-cashier", openingFloatSatang: parsed.data.openingFloatSatang }) }, { status: 201 });
+    const existing = await prisma.posShift.findFirst({ where: { branchId: context.branchId, status: "OPEN" } });
+    if (existing) return NextResponse.json({ data: existing });
+    const shift = await prisma.posShift.create({ data: { branchId: context.branchId, cashierId: context.userId!, openingFloatSatang: parsed.data.openingFloatSatang, status: "OPEN" } });
+    await recordPosAudit({ branchId: context.branchId, actorUserId: context.userId, action: "shift.opened", entityType: "PosShift", entityId: shift.id, metadata: { openingFloatSatang: parsed.data.openingFloatSatang } });
+    return NextResponse.json({ data: shift }, { status: 201 });
+  });
+}

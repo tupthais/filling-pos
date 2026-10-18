@@ -1,5 +1,5 @@
 export type MenuSchedule = { days: number[]; startHour: number; endHour: number };
-export type CatalogProduct = { id: string; name: string; categoryId: string; sku: string; priceSatang: number; channels: { POS: boolean; QR: boolean; DELIVERY: boolean }; schedule?: MenuSchedule; available: boolean; createdAt: string };
+export type CatalogProduct = { id: string; name: string; categoryId: string; sku: string; priceSatang: number; channels: { POS: boolean; QR: boolean; DELIVERY: boolean }; schedule?: MenuSchedule; available: boolean; createdAt: string; imageUrl?: string };
 export type InventoryLedgerEntry = { id: string; ingredientId: string; quantity: number; unit: string; reason: "receipt" | "adjustment" | "count" | "transfer" | "expiry"; reference: string; createdAt: string; location?: string; fromLocation?: string; toLocation?: string; lotId?: string; expiryDate?: string };
 
 export function addCatalogProduct(input: Omit<CatalogProduct, "id" | "available" | "createdAt">): CatalogProduct { return { ...input, id: `product_${crypto.randomUUID()}`, available: true, createdAt: new Date().toISOString() }; }

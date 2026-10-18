@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f8fb;
-  --foreground: #172026;
+  --background: #f4f7f4;
+  --foreground: #142820;
 }
 
 @theme inline {
@@ -12,14 +12,61 @@
   --font-mono: var(--font-geist-mono);
 }
 
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  overscroll-behavior-y: none;
 }
 
+/* Touch & tap targets */
+button,
+a,
 input,
-textarea,
-select {
-  outline: none;
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+/* Hide scrollbar for category bars while allowing smooth scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 58mm / 80mm thermal receipt print styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    max-width: 80mm;
+    margin: 0;
+    padding: 2mm;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #000000 !important;
+    background: #ffffff !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    print-color-adjust: exact;
+  }
+  #printable-receipt.thermal-58 { width: 58mm; max-width: 58mm; padding: 1.5mm; font-size: 9px; line-height: 1.25; }
+  #printable-receipt.thermal-80 { width: 80mm; max-width: 80mm; }
 }

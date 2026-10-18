@@ -1,10 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createProduct, listProducts } from "@/lib/domain/catalog-store";
-import { createPersistedCatalogProduct, listPersistedCatalogProducts } from "@/lib/domain/catalog-repository";
-import { requirePosSession } from "@/lib/auth/guard";
-import { authErrorResponse } from "@/lib/auth/response";
+import { toMenuItem } from "@/lib/domain/menu";
+import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
+import { recordPosAudit } from "@/lib/domain/pos-audit";
+import { ROLES, withPos } from "@/lib/server/pos-context";
+import { channelsSchema, optionGroupSchema } from "@/lib/server/schemas";
 
-const schema = z.object({ name: z.string().min(1), categoryId: z.string().min(1), sku: z.string().min(1), priceSatang: z.number().int().nonnegative(), channels: z.object({ POS: z.boolean(), QR: z.boolean(), DELIVERY: z.boolean() }), schedule: z.object({ days: z.array(z.number().int().min(0).max(6)), startHour: z.number().int().min(0).max(23), endHour: z.number().int().min(1).max(24) }).optional() });
-export async function GET(request: NextRequest) { if (process.env.POS_PERSISTENCE_MODE === "database") { try { await requirePosSession(request, ["Owner", "Manager", "Cashier", "Inventory"]); return NextResponse.json({ data: await listPersistedCatalogProducts(new URL(request.url).searchParams.get("branchId") ?? "") }); } catch (error) { return authErrorResponse(error) ?? NextResponse.json({ error: "Database unavailable" }, { status: 503 }); } } return NextResponse.json({ data: listProducts() }); }
-export async function POST(request: NextRequest) { if (process.env.POS_PERSISTENCE_MODE === "database") { try { await requirePosSession(request, ["Owner", "Manager", "Inventory"]); } catch (error) { return authErrorResponse(error) ?? NextResponse.json({ error: "Catalog authorization failed" }, { status: 500 }); } } const parsed = schema.extend({ branchId: z.string().uuid().optional() }).safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 }); if (process.env.POS_PERSISTENCE_MODE === "database") { if (!parsed.data.branchId) return NextResponse.json({ error: "branchId is required in database mode" }, { status: 400 }); try { return NextResponse.json({ data: await createPersistedCatalogProduct({ ...parsed.data, branchId: parsed.data.branchId }) }, { status: 201 }); } catch { return NextResponse.json({ error: "Database unavailable" }, { status: 503 }); } } return NextResponse.json({ data: createProduct(parsed.data) }, { status: 201 }); }
+const schema = z.object({ name: z.string().min(1).max(120), categoryId: z.string().min(1).max(60), sku: z.string().min(1).max(40).optional(), priceSatang: z.number().int().nonnegative(), channels: channelsSchema.default({ POS: true, QR: true, DELIVERY: false }), options: z.array(optionGroupSchema).max(10).default([]), schedule: z.object({ days: z.array(z.number().int().min(0).max(6)), startHour: z.number().int().min(0).max(23), endHour: z.number().int().min(1).max(24) }).optional(), imageUrl: z.string().max(500000).optional() });
+
+/** All products, including sold-out ones, for menu management. */
+export async function GET(request: NextRequest) {
+  return withPos(request, ["Owner", "Manager", "Cashier", "Inventory"], async (context) => {
+    if (context.mode !== "database") return NextResponse.json({ data: listProducts() });
+    const rows = await prisma.posProduct.findMany({ where: { branchId: context.branchId }, orderBy: [{ categoryId: "asc" }, { name: "asc" }] });
+    return NextResponse.json({ data: rows.map(toMenuItem) });
+  });
+}
+
+export async function POST(request: NextRequest) {
+  return withPos(request, ROLES.catalog, async (context) => {
+    const parsed = schema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
+    const sku = parsed.data.sku ?? `SKU-${Date.now().toString(36).toUpperCase()}`;
+    if (context.mode !== "database") return NextResponse.json({ data: createProduct({ ...parsed.data, sku }) }, { status: 201 });
+    const row = await prisma.posProduct.create({ data: { branchId: context.branchId, name: parsed.data.name, categoryId: parsed.data.categoryId, sku, priceSatang: parsed.data.priceSatang, channels: parsed.data.channels, options: parsed.data.options as unknown as Prisma.InputJsonValue, schedule: parsed.data.schedule } });
+    await recordPosAudit({ branchId: context.branchId, actorUserId: context.userId, action: "product.created", entityType: "PosProduct", entityId: row.id, metadata: { name: row.name, priceSatang: row.priceSatang } });
+    return NextResponse.json({ data: toMenuItem(row) }, { status: 201 });
+  });
+}

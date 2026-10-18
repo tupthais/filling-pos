@@ -31,4 +31,4 @@ adb install -r .\app\build\outputs\apk\debug\app-debug.apk
 
 Enable Developer options and USB debugging on the Huawei device first. iPad cannot install this APK; use the web/PWA surfaces there.
 
-The shell intentionally contains no credentials and no real payment, printer, cash drawer, or platform connector. Room outbox, WorkManager retry, device binding, and hardware-specific adapters are the next device certification slice.
+The shell intentionally contains no credentials and no real payment or platform connector. It now includes a generic Bluetooth ESC/POS adapter for 58/80mm counter, kitchen, and bar printers plus the standard cash-drawer pulse command. Pairing, runtime Bluetooth permissions, printer MAC configuration, and certification on each physical model are still required before production use.

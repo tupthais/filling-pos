@@ -43,4 +43,28 @@ describe("catalog and inventory", () => {
     expect(entries[0].reason).toBe("expiry");
     expect(entries[0].lotId).toBe("LOT-7");
   });
+
+  it("manages the option groups library independently from dishes", async () => {
+    const { listOptionGroups, saveOptionGroup, deleteOptionGroup } = await import("@/lib/domain/catalog-store");
+    const initial = listOptionGroups();
+    expect(initial.length).toBeGreaterThanOrEqual(4);
+
+    const noodles = saveOptionGroup({
+      id: "noodle-type",
+      name: "ชนิดเส้น",
+      required: true,
+      multi: false,
+      choices: [
+        { name: "เส้นเล็ก", priceSatang: 0 },
+        { name: "บะหมี่หยก", priceSatang: 1000 },
+      ],
+    });
+    expect(noodles.id).toBe("noodle-type");
+    expect(listOptionGroups().some((g) => g.id === "noodle-type")).toBe(true);
+
+    const deleted = deleteOptionGroup("noodle-type");
+    expect(deleted).toBe(true);
+    expect(listOptionGroups().some((g) => g.id === "noodle-type")).toBe(false);
+  });
 });
+
