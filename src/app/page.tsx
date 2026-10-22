@@ -292,6 +292,7 @@ export default function PosApp() {
     queueNumber?: string;
     deliveryPlatform?: string;
     deliveryOrderId?: string;
+    openDrawer?: boolean;
   } | null>(null);
   const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("58mm");
 
@@ -937,6 +938,7 @@ export default function PosApp() {
         queueNumber: orderType === "TAKEAWAY" ? queueNumber : undefined,
         deliveryPlatform: orderType === "DELIVERY" ? deliveryPlatform : undefined,
         deliveryOrderId: orderType === "DELIVERY" ? deliveryOrderId : undefined,
+        openDrawer: paymentMethod === "cash",
       });
 
       // Reset cart & inputs
