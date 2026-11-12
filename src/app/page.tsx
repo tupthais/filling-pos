@@ -37,7 +37,8 @@ import { generatePromptPayQrDataUrl, generateQrCodeDataUrl } from "@/lib/domain/
 const satangToBaht = (satang: number) => (satang / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (satang: number) => `฿${satangToBaht(satang)}`;
 const createClientId = (prefix: string) => {
-  return `${prefix}_${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+  // Keep client-generated keys short enough for API validation and readable in audit logs.
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
 const posFetch = (input: RequestInfo | URL, init?: RequestInit) => {
@@ -45,6 +46,11 @@ const posFetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return fetch(input, { ...init, headers });
+};
+
+const apiErrorMessage = async (res: Response, fallback: string) => {
+  const payload = await res.json().catch(() => ({}));
+  return typeof payload.error === "string" && payload.error.trim() ? payload.error : fallback;
 };
 
 const resizeMenuImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -428,7 +434,7 @@ export default function PosApp() {
         setLibraryGroupModalOpen(false);
         void loadOptionGroups();
       } else {
-        showNotice("บันทึกกลุ่มตัวเลือกไม่สำเร็จ", "error");
+        showNotice(await apiErrorMessage(res, "บันทึกกลุ่มตัวเลือกไม่สำเร็จ"), "error");
       }
     } catch {
       showNotice("เกิดข้อผิดพลาดในการเชื่อมต่อ", "error");
@@ -479,7 +485,7 @@ export default function PosApp() {
           setProductEditorOpen(false);
           void loadMenu();
         } else {
-          showNotice("แก้ไขเมนูไม่สำเร็จ", "error");
+          showNotice(await apiErrorMessage(res, "แก้ไขเมนูไม่สำเร็จ"), "error");
         }
       } else {
       const res = await posFetch("/api/catalog/products", {
@@ -499,7 +505,7 @@ export default function PosApp() {
           setProductEditorOpen(false);
           void loadMenu();
         } else {
-          showNotice("เพิ่มเมนูไม่สำเร็จ", "error");
+          showNotice(await apiErrorMessage(res, "เพิ่มเมนูไม่สำเร็จ"), "error");
         }
       }
     } catch {

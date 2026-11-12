@@ -459,6 +459,7 @@ model PosBranch {
   devices     PosDevice[]
   tables      PosTable[]
   products    PosProduct[]
+  optionGroups PosOptionGroup[]
   orders      PosOrder[]
   shifts      PosShift[]
   receipts    PosReceipt[]
@@ -523,6 +524,22 @@ model PosProduct {
 
   @@unique([branchId, sku])
   @@index([branchId, available])
+}
+
+model PosOptionGroup {
+  id        String    @id @default(uuid()) @db.Uuid
+  branchId  String    @db.Uuid @map("branch_id")
+  groupKey  String    @map("group_key")
+  name      String
+  required  Boolean   @default(false)
+  multi     Boolean   @default(false)
+  choices   Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  branch    PosBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, groupKey])
+  @@index([branchId])
 }
 
 model PosOrder {
